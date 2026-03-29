@@ -1,8 +1,8 @@
 # Zotero Split Theme
 
-<p align="right"><b>English</b> | <a href="README.zh-CN.md">中文</a></p>
-
 [![Zotero 8](https://img.shields.io/badge/Zotero-8-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme?style=flat-square)](https://github.com/Diraw/zotero-split-theme/releases) [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+
+<p align="right"><b>English</b> | <a href="README.zh-CN.md">中文</a></p>
 
 **This plugin is built for the common mixed-theme workflow that Zotero does not provide out of the box**, such as:
 
