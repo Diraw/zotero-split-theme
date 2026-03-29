@@ -10,6 +10,7 @@ export type FluentMessageId =
   | 'pref-reader-apply-dark'
   | 'pref-reader-apply-follow'
   | 'pref-reader-apply-light'
+  | 'pref-reader-background-theme'
   | 'pref-reader-content-theme'
   | 'pref-reader-left-sidebar-theme'
   | 'pref-reader-sidebar-theme'

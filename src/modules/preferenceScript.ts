@@ -23,6 +23,9 @@ export function registerPrefsScripts(_window: Window) {
   const readerThemeInput = doc.querySelector(
     `#zotero-prefpane-${config.addonRef}-reader-theme`,
   ) as HTMLSelectElement | null;
+  const readerBackgroundThemeInput = doc.querySelector(
+    `#zotero-prefpane-${config.addonRef}-reader-background-theme`,
+  ) as HTMLSelectElement | null;
   const readerSidebarThemeInput = doc.querySelector(
     `#zotero-prefpane-${config.addonRef}-reader-sidebar-theme`,
   ) as HTMLSelectElement | null;
@@ -33,6 +36,7 @@ export function registerPrefsScripts(_window: Window) {
     !readerToolbarThemeInput ||
     !readerLeftSidebarThemeInput ||
     !readerThemeInput ||
+    !readerBackgroundThemeInput ||
     !readerSidebarThemeInput
   ) {
     return;
@@ -45,6 +49,7 @@ export function registerPrefsScripts(_window: Window) {
     readerToolbarThemeInput,
     readerLeftSidebarThemeInput,
     readerThemeInput,
+    readerBackgroundThemeInput,
     readerSidebarThemeInput,
   ];
 
@@ -64,6 +69,9 @@ export function registerPrefsScripts(_window: Window) {
     getPref("readerLeftSidebarTheme"),
   );
   readerThemeInput.value = normalizeThemeMode(getPref("readerTheme"));
+  readerBackgroundThemeInput.value = normalizeThemeMode(
+    getPref("readerBackgroundTheme"),
+  );
   readerSidebarThemeInput.value = normalizeThemeMode(
     getPref("readerSidebarTheme"),
   );
@@ -98,6 +106,14 @@ export function registerPrefsScripts(_window: Window) {
 
   readerThemeInput.addEventListener("change", () => {
     setPref("readerTheme", normalizeThemeMode(readerThemeInput.value));
+    SplitThemeManager.refreshAllWindowsSoon();
+  });
+
+  readerBackgroundThemeInput.addEventListener("change", () => {
+    setPref(
+      "readerBackgroundTheme",
+      normalizeThemeMode(readerBackgroundThemeInput.value),
+    );
     SplitThemeManager.refreshAllWindowsSoon();
   });
 

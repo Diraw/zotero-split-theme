@@ -1,6 +1,6 @@
 # Zotero Split Theme
 
-[![Zotero 8](https://img.shields.io/badge/Zotero-8-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme?style=flat-square)](https://github.com/Diraw/zotero-split-theme/releases) [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+[![Zotero 8](https://img.shields.io/badge/Zotero-8-green?&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme)](https://github.com/Diraw/zotero-split-theme/releases) [![Downloads](https://img.shields.io/github/downloads/Diraw/zotero-split-theme/total?color=yellow)](https://github.com/Diraw/zotero-split-theme/releases/) [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue&logo=github)](https://github.com/windingwind/zotero-plugin-template)
 
 <p align="right"><b>English</b> | <a href="README.zh-CN.md">中文</a></p>
 
@@ -77,14 +77,37 @@ Build output:
 
 This repository is configured to publish releases through GitHub Actions.
 
-Typical release flow:
+Recommended release flow:
 
 ```powershell
 npm run build
-npm run release
+npm run lint:check
 ```
 
-Pushing a `v*` tag triggers the workflow in [.github/workflows/release.yml](./.github/workflows/release.yml) and publishes the release assets.
+1. Update the version in `package.json` (for example, `0.1.1` -> `0.1.2`).
+2. Run the local checks:
+
+```powershell
+npm run build
+npm run lint:check
+```
+
+3. Commit the release changes:
+
+```powershell
+git add .
+git commit -m "release: v0.1.2"
+```
+
+4. Create and push the release tag:
+
+```powershell
+git tag v0.1.2
+git push origin main
+git push origin v0.1.2
+```
+
+Pushing a `v*` tag triggers the workflow in [.github/workflows/release.yml](./.github/workflows/release.yml), which runs `npm run build` and `npm run release`, then publishes the release assets automatically.
 
 ## License
 

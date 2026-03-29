@@ -1,6 +1,6 @@
 # Zotero Split Theme
 
-[![Zotero 8](https://img.shields.io/badge/Zotero-8-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme?style=flat-square)](https://github.com/Diraw/zotero-split-theme/releases) [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+[![Zotero 8](https://img.shields.io/badge/Zotero-8-green?&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme)](https://github.com/Diraw/zotero-split-theme/releases) [![Downloads](https://img.shields.io/github/downloads/Diraw/zotero-split-theme/total?color=yellow)](https://github.com/Diraw/zotero-split-theme/releases/) [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue&logo=github)](https://github.com/windingwind/zotero-plugin-template)
 
 <p align="right"><a href="README.md">English</a> | <b>中文</b></p>
 
@@ -77,14 +77,37 @@ npm run build
 
 这个仓库已经配置了 GitHub Actions 自动发布。
 
-常规发布流程：
+推荐发布流程：
 
 ```powershell
 npm run build
-npm run release
+npm run lint:check
 ```
 
-推送 `v*` tag 后，会触发 [.github/workflows/release.yml](./.github/workflows/release.yml) 自动创建 Release 并上传构建产物。
+1. 先更新 `package.json` 里的版本号，例如 `0.1.1` -> `0.1.2`。
+2. 本地执行检查：
+
+```powershell
+npm run build
+npm run lint:check
+```
+
+3. 提交发版修改：
+
+```powershell
+git add .
+git commit -m "release: v0.1.2"
+```
+
+4. 创建并推送版本 tag：
+
+```powershell
+git tag v0.1.2
+git push origin main
+git push origin v0.1.2
+```
+
+推送 `v*` tag 后，会触发 [.github/workflows/release.yml](./.github/workflows/release.yml)，执行 `npm run build` 和 `npm run release`，并自动创建 Release、上传构建产物。
 
 ## 许可证
 

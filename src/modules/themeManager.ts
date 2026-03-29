@@ -2,15 +2,29 @@ import { getPref } from "../utils/prefs";
 import { isWindowAlive } from "../utils/window";
 
 export type ThemeMode = "follow" | "light" | "dark";
+type ExplicitThemeMode = Exclude<ThemeMode, "follow">;
 
 type ThemeSettings = {
   enabled: boolean;
   appTheme: ThemeMode;
   readerTheme: ThemeMode;
+  readerBackgroundTheme: ThemeMode;
   readerToolbarTheme: ThemeMode;
   readerLeftSidebarTheme: ThemeMode;
   readerSidebarTheme: ThemeMode;
 };
+
+type ResolvedThemeSettings = {
+  enabled: boolean;
+  appTheme: ThemeMode;
+  readerTheme: ExplicitThemeMode;
+  readerBackgroundTheme: ExplicitThemeMode;
+  readerToolbarTheme: ExplicitThemeMode;
+  readerLeftSidebarTheme: ExplicitThemeMode;
+  readerSidebarTheme: ExplicitThemeMode;
+};
+
+type ThemeTokens = Record<string, string>;
 
 type WindowState = {
   refreshTimer?: number;
@@ -23,14 +37,14 @@ const READER_TOOLBAR_ATTR = "data-zst-reader-toolbar-theme";
 const READER_LEFT_SIDEBAR_STYLE_ID =
   "zotero-split-theme-reader-left-sidebar-style";
 const READER_LEFT_SIDEBAR_ATTR = "data-zst-reader-left-sidebar-theme";
+const READER_BACKGROUND_STYLE_ID = "zotero-split-theme-reader-background-style";
+const READER_BACKGROUND_ATTR = "data-zst-reader-background-theme";
 const READER_SIDEBAR_STYLE_ID = "zotero-split-theme-reader-sidebar-style";
 const READER_SIDEBAR_ATTR = "data-zst-reader-sidebar-theme";
-let lastAppliedReaderScheme: Exclude<ThemeMode, "follow"> | null | undefined;
+const cachedNativeThemeTokens: Partial<Record<ExplicitThemeMode, ThemeTokens>> =
+  {};
 
-const OFFICIAL_APP_TOKENS: Record<
-  Exclude<ThemeMode, "follow">,
-  Record<string, string>
-> = {
+const OFFICIAL_APP_TOKENS: Record<ExplicitThemeMode, Record<string, string>> = {
   light: {
     "accent-blue": "#4072e5",
     "accent-blue10": "rgba(64, 114, 229, 0.1019607843)",
@@ -171,6 +185,7 @@ const OFFICIAL_APP_TOKENS: Record<
     "color-focus-border": "rgba(0, 0, 0, 0.5019607843)",
   },
 };
+const THEME_TOKEN_KEYS = Object.keys(OFFICIAL_APP_TOKENS.light);
 
 const windowStates = new Map<Window, WindowState>();
 
@@ -200,8 +215,8 @@ function shutdown() {
   }
   clearReaderLeftSidebarThemeFromOpenReaders();
   clearReaderToolbarThemeFromOpenReaders();
-  applyReaderThemeToOpenReaders("follow");
-  lastAppliedReaderScheme = undefined;
+  clearReaderBackgroundThemeFromOpenReaders();
+  resetReaderThemeToDefault();
 }
 
 function registerWindow(win: Window) {
@@ -283,15 +298,22 @@ function applyWindowThemes(win: Window) {
     );
     clearReaderLeftSidebarThemeFromOpenReaders();
     clearReaderToolbarThemeFromOpenReaders();
-    applyReaderThemeToOpenReaders("follow");
+    clearReaderBackgroundThemeFromOpenReaders();
+    resetReaderThemeToDefault();
     return;
   }
 
+  const resolvedSettings = resolveThemeSettings(win.document, settings);
   applyAppThemeToDocument(win.document, settings.appTheme);
-  applyReaderSidebarThemeToWindow(win, settings.readerSidebarTheme);
-  applyReaderLeftSidebarThemeToOpenReaders(settings.readerLeftSidebarTheme);
-  applyReaderToolbarThemeToOpenReaders(settings.readerToolbarTheme);
-  applyReaderThemeToOpenReaders(settings.readerTheme);
+  applyReaderSidebarThemeToWindow(win, resolvedSettings.readerSidebarTheme);
+  applyReaderLeftSidebarThemeToOpenReaders(
+    resolvedSettings.readerLeftSidebarTheme,
+  );
+  applyReaderToolbarThemeToOpenReaders(resolvedSettings.readerToolbarTheme);
+  applyReaderBackgroundThemeToOpenReaders(
+    resolvedSettings.readerBackgroundTheme,
+  );
+  applyReaderThemeToOpenReaders(resolvedSettings.readerTheme);
 }
 
 function cleanupDeadWindows() {
@@ -319,11 +341,41 @@ function readThemeSettings(): ThemeSettings {
     enabled: Boolean(getPref("enabled")),
     appTheme: normalizeThemeMode(getPref("appTheme")),
     readerTheme: normalizeThemeMode(getPref("readerTheme")),
+    readerBackgroundTheme: normalizeThemeMode(getPref("readerBackgroundTheme")),
     readerToolbarTheme: normalizeThemeMode(getPref("readerToolbarTheme")),
     readerLeftSidebarTheme: normalizeThemeMode(
       getPref("readerLeftSidebarTheme"),
     ),
     readerSidebarTheme: normalizeThemeMode(getPref("readerSidebarTheme")),
+  };
+}
+
+function resolveThemeSettings(
+  doc: Document,
+  settings: ThemeSettings,
+): ResolvedThemeSettings {
+  const nativeAppTheme = detectUnderlyingWindowTheme(doc);
+
+  return {
+    enabled: settings.enabled,
+    appTheme: settings.appTheme,
+    readerTheme: resolveThemeMode(settings.readerTheme, nativeAppTheme),
+    readerBackgroundTheme: resolveThemeMode(
+      settings.readerBackgroundTheme,
+      nativeAppTheme,
+    ),
+    readerToolbarTheme: resolveThemeMode(
+      settings.readerToolbarTheme,
+      nativeAppTheme,
+    ),
+    readerLeftSidebarTheme: resolveThemeMode(
+      settings.readerLeftSidebarTheme,
+      nativeAppTheme,
+    ),
+    readerSidebarTheme: resolveThemeMode(
+      settings.readerSidebarTheme,
+      nativeAppTheme,
+    ),
   };
 }
 
@@ -342,15 +394,10 @@ function applyAppThemeToDocument(doc: Document, theme: ThemeMode) {
   );
 }
 
-function applyReaderToolbarThemeToOpenReaders(theme: ThemeMode) {
+function applyReaderToolbarThemeToOpenReaders(theme: ExplicitThemeMode) {
   for (const reader of getOpenReaders()) {
     const doc = getReaderShellDocument(reader);
     if (!doc) {
-      continue;
-    }
-
-    if (theme === "follow") {
-      clearThemeFromDocument(doc, READER_TOOLBAR_ATTR, READER_TOOLBAR_STYLE_ID);
       continue;
     }
 
@@ -364,19 +411,10 @@ function applyReaderToolbarThemeToOpenReaders(theme: ThemeMode) {
   }
 }
 
-function applyReaderLeftSidebarThemeToOpenReaders(theme: ThemeMode) {
+function applyReaderLeftSidebarThemeToOpenReaders(theme: ExplicitThemeMode) {
   for (const reader of getOpenReaders()) {
     const doc = getReaderShellDocument(reader);
     if (!doc) {
-      continue;
-    }
-
-    if (theme === "follow") {
-      clearThemeFromDocument(
-        doc,
-        READER_LEFT_SIDEBAR_ATTR,
-        READER_LEFT_SIDEBAR_STYLE_ID,
-      );
       continue;
     }
 
@@ -416,16 +454,36 @@ function clearReaderLeftSidebarThemeFromOpenReaders() {
   }
 }
 
-function applyReaderSidebarThemeToWindow(win: Window, theme: ThemeMode) {
-  if (theme === "follow") {
-    clearThemeFromDocument(
-      win.document,
-      READER_SIDEBAR_ATTR,
-      READER_SIDEBAR_STYLE_ID,
-    );
-    return;
+function applyReaderBackgroundThemeToOpenReaders(theme: ExplicitThemeMode) {
+  for (const reader of getOpenReaders()) {
+    for (const doc of getReaderBackgroundDocuments(reader)) {
+      setThemeOnDocument(
+        doc,
+        READER_BACKGROUND_ATTR,
+        READER_BACKGROUND_STYLE_ID,
+        theme,
+        buildReaderBackgroundThemeCSS(theme),
+      );
+    }
   }
+}
 
+function clearReaderBackgroundThemeFromOpenReaders() {
+  for (const reader of getOpenReaders()) {
+    for (const doc of getReaderBackgroundDocuments(reader, true)) {
+      clearThemeFromDocument(
+        doc,
+        READER_BACKGROUND_ATTR,
+        READER_BACKGROUND_STYLE_ID,
+      );
+    }
+  }
+}
+
+function applyReaderSidebarThemeToWindow(
+  win: Window,
+  theme: ExplicitThemeMode,
+) {
   setThemeOnDocument(
     win.document,
     READER_SIDEBAR_ATTR,
@@ -435,19 +493,23 @@ function applyReaderSidebarThemeToWindow(win: Window, theme: ThemeMode) {
   );
 }
 
-function applyReaderThemeToOpenReaders(theme: ThemeMode) {
-  const colorScheme = theme === "follow" ? null : theme;
-
-  if (lastAppliedReaderScheme === colorScheme) {
-    return;
-  }
-
-  lastAppliedReaderScheme = colorScheme;
-
+function applyReaderThemeToOpenReaders(theme: ExplicitThemeMode) {
   for (const reader of getOpenReaders()) {
     try {
       if (typeof reader?.setColorScheme === "function") {
-        reader.setColorScheme(colorScheme);
+        reader.setColorScheme(theme);
+      }
+    } catch (_error) {
+      // Reader can disappear during async tab/window teardown.
+    }
+  }
+}
+
+function resetReaderThemeToDefault() {
+  for (const reader of getOpenReaders()) {
+    try {
+      if (typeof reader?.setColorScheme === "function") {
+        reader.setColorScheme(null);
       }
     } catch (_error) {
       // Reader can disappear during async tab/window teardown.
@@ -466,6 +528,196 @@ function getReaderShellDocument(reader: any) {
   } catch (_error) {
     return null;
   }
+}
+
+function getReaderBackgroundDocuments(reader: any, includeShell = false) {
+  const docs: Document[] = [];
+
+  if (includeShell) {
+    const shellDoc = getReaderShellDocument(reader);
+    if (shellDoc) {
+      docs.push(shellDoc);
+    }
+  }
+
+  const primaryDoc = getReaderViewDocument(
+    reader?._internalReader?._primaryView,
+  );
+  if (primaryDoc) {
+    docs.push(primaryDoc);
+  }
+
+  const secondaryDoc = getReaderViewDocument(
+    reader?._internalReader?._secondaryView,
+  );
+  if (secondaryDoc && secondaryDoc !== primaryDoc) {
+    docs.push(secondaryDoc);
+  }
+
+  return docs;
+}
+
+function getReaderViewDocument(view: any) {
+  try {
+    return (view?._iframeWindow?.document as Document | undefined) || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function resolveThemeMode(
+  theme: ThemeMode,
+  fallbackTheme: ExplicitThemeMode,
+): ExplicitThemeMode {
+  return theme === "follow" ? fallbackTheme : theme;
+}
+
+function detectDocumentTheme(doc: Document): ExplicitThemeMode {
+  const root = doc.documentElement as HTMLElement | null;
+  if (!root) {
+    return "light";
+  }
+
+  const explicitTheme = root.getAttribute(APP_ATTR);
+  if (explicitTheme === "light" || explicitTheme === "dark") {
+    return explicitTheme;
+  }
+
+  try {
+    const view = doc.defaultView;
+    if (!view) {
+      return "light";
+    }
+
+    const rootStyle = view.getComputedStyle(root);
+    if (!rootStyle) {
+      return "light";
+    }
+    const colorScheme = rootStyle.colorScheme.trim();
+    if (colorScheme.includes("dark")) {
+      return "dark";
+    }
+    if (colorScheme.includes("light")) {
+      return "light";
+    }
+
+    const bodyStyle = doc.body ? view.getComputedStyle(doc.body) : null;
+    const background =
+      rootStyle.getPropertyValue("--color-background").trim() ||
+      rootStyle.backgroundColor ||
+      bodyStyle?.backgroundColor ||
+      "";
+
+    return isDarkColor(background) ? "dark" : "light";
+  } catch (_error) {
+    return "light";
+  }
+}
+
+function detectUnderlyingWindowTheme(doc: Document): ExplicitThemeMode {
+  const root = doc.documentElement;
+  if (!root) {
+    return "light";
+  }
+
+  const existingAttr = root.getAttribute(APP_ATTR);
+  const existingStyle = doc.getElementById(
+    APP_STYLE_ID,
+  ) as HTMLStyleElement | null;
+
+  try {
+    if (existingAttr !== null) {
+      root.removeAttribute(APP_ATTR);
+    }
+    existingStyle?.remove();
+    const theme = detectDocumentTheme(doc);
+    cacheThemeTokensFromDocument(doc, theme);
+    return theme;
+  } finally {
+    if (existingAttr === "light" || existingAttr === "dark") {
+      root.setAttribute(APP_ATTR, existingAttr);
+    }
+
+    if (existingStyle && !doc.getElementById(APP_STYLE_ID)) {
+      const parent = doc.head || root;
+      parent.appendChild(existingStyle);
+    }
+  }
+}
+
+function cacheThemeTokensFromDocument(doc: Document, theme: ExplicitThemeMode) {
+  const tokens = readThemeTokensFromDocument(doc);
+  if (Object.keys(tokens).length === 0) {
+    return;
+  }
+
+  cachedNativeThemeTokens[theme] = {
+    ...OFFICIAL_APP_TOKENS[theme],
+    ...tokens,
+  } as ThemeTokens;
+}
+
+function readThemeTokensFromDocument(doc: Document) {
+  const root = doc.documentElement;
+  const view = doc.defaultView;
+  if (!root || !view) {
+    return {};
+  }
+
+  try {
+    const style = view.getComputedStyle(root);
+    if (!style) {
+      return {};
+    }
+
+    return THEME_TOKEN_KEYS.reduce<Partial<ThemeTokens>>((acc, key) => {
+      const value = style.getPropertyValue(`--${key}`).trim();
+      if (value) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+  } catch (_error) {
+    return {};
+  }
+}
+
+function isDarkColor(color: string) {
+  const rgb = parseColor(color);
+  if (!rgb) {
+    return false;
+  }
+
+  const [r, g, b] = rgb;
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance < 0.5;
+}
+
+function parseColor(color: string) {
+  const normalized = color.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const hexMatch = normalized.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    if (hex.length === 3) {
+      return hex.split("").map((value) => parseInt(value.repeat(2), 16));
+    }
+    return [
+      parseInt(hex.slice(0, 2), 16),
+      parseInt(hex.slice(2, 4), 16),
+      parseInt(hex.slice(4, 6), 16),
+    ];
+  }
+
+  const rgbMatch = normalized.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rgbMatch) {
+    return rgbMatch.slice(1, 4).map((value) => Number.parseInt(value, 10));
+  }
+
+  return null;
 }
 
 function hasActiveReader(win: Window) {
@@ -514,9 +766,16 @@ function clearThemeFromDocument(
 }
 
 function buildTokenDeclarations(theme: Exclude<ThemeMode, "follow">) {
-  return Object.entries(OFFICIAL_APP_TOKENS[theme])
+  return Object.entries(getThemeTokens(theme))
     .map(([key, value]) => `  --${key}: ${value};`)
     .join("\n");
+}
+
+function getThemeTokens(theme: ExplicitThemeMode) {
+  return {
+    ...OFFICIAL_APP_TOKENS[theme],
+    ...(cachedNativeThemeTokens[theme] ?? {}),
+  } as ThemeTokens;
 }
 
 function buildAppThemeCSS(theme: Exclude<ThemeMode, "follow">) {
@@ -702,6 +961,25 @@ ${tokenDeclarations}
   .tag-selector-message
 ) {
   color: var(--fill-secondary) !important;
+}
+`;
+}
+
+function buildReaderBackgroundThemeCSS(theme: Exclude<ThemeMode, "follow">) {
+  const backgroundColor = theme === "dark" ? "#272727" : "#f2f2f2";
+
+  return `
+:root[${READER_BACKGROUND_ATTR}="${theme}"] body,
+:root[${READER_BACKGROUND_ATTR}="${theme}"] #viewerContainer,
+:root[${READER_BACKGROUND_ATTR}="${theme}"] body #viewerContainer {
+  background-color: ${backgroundColor} !important;
+}
+
+:root[${READER_BACKGROUND_ATTR}="${theme}"] :is(
+  body,
+  #viewerContainer
+) {
+  background-image: none !important;
 }
 `;
 }

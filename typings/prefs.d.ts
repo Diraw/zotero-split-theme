@@ -10,6 +10,7 @@ declare namespace _ZoteroTypes {
       "enabled": boolean;
       "appTheme": string;
       "readerTheme": string;
+      "readerBackgroundTheme": string;
       "readerToolbarTheme": string;
       "readerLeftSidebarTheme": string;
       "readerSidebarTheme": string;
