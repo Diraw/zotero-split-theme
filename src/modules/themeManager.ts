@@ -28,6 +28,8 @@ type ThemeTokens = Record<string, string>;
 
 type WindowState = {
   refreshTimer?: number;
+  recoveryTimers: Map<number, number>;
+  readerLoadListener?: (event: Event) => void;
 };
 
 const APP_STYLE_ID = "zotero-split-theme-app-style";
@@ -196,6 +198,7 @@ export const SplitThemeManager = {
   unregisterWindow,
   refreshAllWindows,
   refreshAllWindowsSoon,
+  refreshAllWindowsWithRecovery,
 };
 
 export function normalizeThemeMode(value: unknown): ThemeMode {
@@ -229,12 +232,21 @@ function registerWindow(win: Window) {
     return;
   }
 
-  const state: WindowState = {};
+  const state: WindowState = {
+    recoveryTimers: new Map(),
+  };
   windowStates.set(win, state);
+  state.readerLoadListener = (event: Event) => {
+    const doc = event.target as Document | null;
+    if (!isReaderShellDocument(doc)) {
+      return;
+    }
+    refreshAllWindowsWithRecovery([0, 150, 500]);
+  };
+  win.addEventListener("DOMContentLoaded", state.readerLoadListener, true);
 
   refreshWindowSoon(win, 0);
-  refreshWindowSoon(win, 300);
-  refreshWindowSoon(win, 1200);
+  scheduleWindowRecoveryRefreshes(win, [300, 1200]);
 }
 
 function unregisterWindow(win: Window) {
@@ -242,6 +254,16 @@ function unregisterWindow(win: Window) {
   if (state) {
     if (state.refreshTimer !== undefined) {
       win.clearTimeout(state.refreshTimer);
+    }
+    for (const timer of state.recoveryTimers.values()) {
+      win.clearTimeout(timer);
+    }
+    if (state.readerLoadListener) {
+      win.removeEventListener(
+        "DOMContentLoaded",
+        state.readerLoadListener,
+        true,
+      );
     }
     windowStates.delete(win);
   }
@@ -265,6 +287,14 @@ function refreshAllWindowsSoon(delay = 0) {
   }
 }
 
+function refreshAllWindowsWithRecovery(delays: number[]) {
+  cleanupDeadWindows();
+  for (const win of Zotero.getMainWindows()) {
+    registerWindow(win);
+    scheduleWindowRecoveryRefreshes(win, delays);
+  }
+}
+
 function refreshWindowSoon(win: Window, delay = 0) {
   const state = windowStates.get(win);
   if (!state || !isWindowAlive(win)) {
@@ -279,6 +309,27 @@ function refreshWindowSoon(win: Window, delay = 0) {
     state.refreshTimer = undefined;
     applyWindowThemes(win);
   }, delay);
+}
+
+function scheduleWindowRecoveryRefreshes(win: Window, delays: number[]) {
+  const state = windowStates.get(win);
+  if (!state || !isWindowAlive(win)) {
+    return;
+  }
+
+  for (const delay of delays) {
+    const existingTimer = state.recoveryTimers.get(delay);
+    if (existingTimer !== undefined) {
+      win.clearTimeout(existingTimer);
+    }
+
+    const timer = win.setTimeout(() => {
+      state.recoveryTimers.delete(delay);
+      applyWindowThemes(win);
+    }, delay);
+
+    state.recoveryTimers.set(delay, timer);
+  }
 }
 
 function applyWindowThemes(win: Window) {
@@ -455,7 +506,7 @@ function clearReaderLeftSidebarThemeFromOpenReaders() {
 }
 
 function applyReaderBackgroundThemeToOpenReaders(theme: ExplicitThemeMode) {
-  for (const reader of getOpenReaders()) {
+  for (const reader of getOpenReadersAndPreviews()) {
     for (const doc of getReaderBackgroundDocuments(reader)) {
       setThemeOnDocument(
         doc,
@@ -469,7 +520,7 @@ function applyReaderBackgroundThemeToOpenReaders(theme: ExplicitThemeMode) {
 }
 
 function clearReaderBackgroundThemeFromOpenReaders() {
-  for (const reader of getOpenReaders()) {
+  for (const reader of getOpenReadersAndPreviews()) {
     for (const doc of getReaderBackgroundDocuments(reader, true)) {
       clearThemeFromDocument(
         doc,
@@ -494,7 +545,7 @@ function applyReaderSidebarThemeToWindow(
 }
 
 function applyReaderThemeToOpenReaders(theme: ExplicitThemeMode) {
-  for (const reader of getOpenReaders()) {
+  for (const reader of getOpenReadersAndPreviews()) {
     try {
       if (typeof reader?.setColorScheme === "function") {
         reader.setColorScheme(theme);
@@ -506,7 +557,7 @@ function applyReaderThemeToOpenReaders(theme: ExplicitThemeMode) {
 }
 
 function resetReaderThemeToDefault() {
-  for (const reader of getOpenReaders()) {
+  for (const reader of getOpenReadersAndPreviews()) {
     try {
       if (typeof reader?.setColorScheme === "function") {
         reader.setColorScheme(null);
@@ -520,6 +571,26 @@ function resetReaderThemeToDefault() {
 function getOpenReaders() {
   const readers = (Zotero.Reader as any)?._readers;
   return Array.isArray(readers) ? readers : [];
+}
+
+function getOpenReadersAndPreviews() {
+  const readers = new Set<any>(getOpenReaders());
+
+  for (const win of Zotero.getMainWindows()) {
+    if (!isWindowAlive(win)) {
+      continue;
+    }
+
+    const previews = win.document.querySelectorAll("attachment-preview");
+    for (const preview of previews) {
+      const reader = (preview as any)?._reader;
+      if (reader) {
+        readers.add(reader);
+      }
+    }
+  }
+
+  return Array.from(readers);
 }
 
 function getReaderShellDocument(reader: any) {
@@ -570,6 +641,18 @@ function resolveThemeMode(
   fallbackTheme: ExplicitThemeMode,
 ): ExplicitThemeMode {
   return theme === "follow" ? fallbackTheme : theme;
+}
+
+function isReaderShellDocument(doc: Document | null) {
+  if (!doc) {
+    return false;
+  }
+
+  try {
+    return doc.location?.href === "resource://zotero/reader/reader.html";
+  } catch (_error) {
+    return false;
+  }
 }
 
 function detectDocumentTheme(doc: Document): ExplicitThemeMode {

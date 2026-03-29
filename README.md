@@ -77,18 +77,12 @@ Build output:
 
 This repository is configured to publish releases through GitHub Actions.
 
-Recommended release flow:
-
-```powershell
-npm run build
-npm run lint:check
-```
-
 1. Update the version in `package.json` (for example, `0.1.1` -> `0.1.2`).
 2. Run the local checks:
 
 ```powershell
 npm run build
+npm run lint:fix
 npm run lint:check
 ```
 

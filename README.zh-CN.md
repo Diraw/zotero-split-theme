@@ -77,18 +77,12 @@ npm run build
 
 这个仓库已经配置了 GitHub Actions 自动发布。
 
-推荐发布流程：
-
-```powershell
-npm run build
-npm run lint:check
-```
-
 1. 先更新 `package.json` 里的版本号，例如 `0.1.1` -> `0.1.2`。
 2. 本地执行检查：
 
 ```powershell
 npm run build
+npm run lint:fix
 npm run lint:check
 ```
 

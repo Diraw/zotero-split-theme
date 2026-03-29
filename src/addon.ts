@@ -21,6 +21,7 @@ class Addon {
     dialog?: DialogHelper;
     theme?: {
       notifierID?: string;
+      readerRenderHandler?: _ZoteroTypes.Reader.EventHandler<"renderToolbar">;
     };
   };
   public hooks: typeof hooks;

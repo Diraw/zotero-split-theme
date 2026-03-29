@@ -12,6 +12,7 @@ async function onStartup() {
   initLocale();
   registerPreferencePane();
   registerTabObserver();
+  registerReaderObserver();
   SplitThemeManager.startup();
 
   addon.data.initialized = true;
@@ -27,6 +28,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 function onShutdown(): void {
   unregisterTabObserver();
+  unregisterReaderObserver();
   SplitThemeManager.shutdown();
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed
@@ -86,6 +88,24 @@ function registerTabObserver() {
   ]);
 }
 
+function registerReaderObserver() {
+  addon.data.theme = addon.data.theme || {};
+  if (addon.data.theme.readerRenderHandler) {
+    return;
+  }
+
+  const handler: _ZoteroTypes.Reader.EventHandler<"renderToolbar"> = () => {
+    SplitThemeManager.refreshAllWindowsWithRecovery([0, 150, 500]);
+  };
+
+  addon.data.theme.readerRenderHandler = handler;
+  Zotero.Reader.registerEventListener(
+    "renderToolbar",
+    handler,
+    addon.data.config.addonID,
+  );
+}
+
 function unregisterTabObserver() {
   const notifierID = addon.data.theme?.notifierID;
   if (!notifierID) {
@@ -93,7 +113,17 @@ function unregisterTabObserver() {
   }
 
   Zotero.Notifier.unregisterObserver(notifierID);
-  addon.data.theme = {};
+  delete addon.data.theme?.notifierID;
+}
+
+function unregisterReaderObserver() {
+  const handler = addon.data.theme?.readerRenderHandler;
+  if (!handler) {
+    return;
+  }
+
+  Zotero.Reader.unregisterEventListener("renderToolbar", handler);
+  delete addon.data.theme?.readerRenderHandler;
 }
 
 export default {
