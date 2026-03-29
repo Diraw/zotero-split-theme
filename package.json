@@ -1,7 +1,7 @@
 {
   "name": "zotero-split-theme",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Split light and dark themes between Zotero UI areas and the PDF reader.",
   "config": {
     "addonName": "Zotero Split Theme",
