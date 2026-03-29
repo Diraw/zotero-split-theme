@@ -7,23 +7,23 @@ class Addon {
   public data: {
     alive: boolean;
     config: typeof config;
-    // Env type, see build.js
     env: "development" | "production";
-    initialized?: boolean;
+    initialized: boolean;
     ztoolkit: ZToolkit;
     locale?: {
       current: any;
     };
     prefs?: {
       window: Window;
-      columns: Array<ColumnOptions>;
-      rows: Array<{ [dataKey: string]: string }>;
+      columns?: Array<ColumnOptions>;
+      rows?: Array<{ [dataKey: string]: string }>;
     };
     dialog?: DialogHelper;
+    theme?: {
+      notifierID?: string;
+    };
   };
-  // Lifecycle hooks
   public hooks: typeof hooks;
-  // APIs
   public api: object;
 
   constructor() {

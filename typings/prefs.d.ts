@@ -7,8 +7,12 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "enable": boolean;
-      "input": string;
+      "enabled": boolean;
+      "appTheme": string;
+      "readerTheme": string;
+      "readerToolbarTheme": string;
+      "readerLeftSidebarTheme": string;
+      "readerSidebarTheme": string;
     };
   }
 }
