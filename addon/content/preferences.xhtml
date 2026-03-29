@@ -6,94 +6,24 @@
   onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
   <html:style>
-    .split-theme-root {
-      display: grid;
-      gap: 18px;
-      max-width: 720px;
-    }
-
-    .split-theme-intro {
-      display: grid;
-      gap: 6px;
-    }
-
-    .split-theme-title {
-      margin: 0;
-      letter-spacing: -0.01em;
-    }
-
-    .split-theme-description,
-    .split-theme-help {
-      margin: 0;
-      line-height: 1.45;
-      color: var(--fill-secondary, inherit);
-    }
-
-    .split-theme-toggle {
-      margin-top: 2px;
-    }
-
-    .split-theme-section {
-      display: grid;
-      gap: 12px;
-      padding-top: 14px;
-      border-top: 1px solid rgba(127, 127, 127, 0.16);
-    }
-
-    .split-theme-section-header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .split-theme-section-heading {
-      display: grid;
-      gap: 3px;
-      min-width: 0;
-    }
-
-    .split-theme-section-title {
-      font-size: 0.98rem;
-      font-weight: 600;
-      margin: 0;
-    }
-
-    .split-theme-section-desc {
-      font-size: 0.9rem;
-      margin: 0;
-      line-height: 1.4;
-      color: var(--fill-secondary, inherit);
-    }
-
-    .split-theme-grid {
-      display: grid;
-      gap: 10px 16px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .split-theme-field {
-      display: grid;
-      gap: 6px;
-      min-width: 0;
-    }
-
-    .split-theme-field > html|label {
-      font-weight: 500;
-      color: var(--fill-secondary, inherit);
-    }
-
-    .split-theme-field > html|select {
-      min-height: 32px;
-      border-radius: 6px;
-    }
-
-    @media (max-width: 640px) {
-      .split-theme-grid {
-        grid-template-columns: 1fr;
-      }
-    }
+    .split-theme-root { display: grid; gap: 18px; max-width: 720px; }
+    .split-theme-intro { display: grid; gap: 6px; } .split-theme-title { margin:
+    0; letter-spacing: -0.01em; } .split-theme-description, .split-theme-help {
+    margin: 0; line-height: 1.45; color: var(--fill-secondary, inherit); }
+    .split-theme-toggle { margin-top: 2px; } .split-theme-section { display:
+    grid; gap: 12px; padding-top: 14px; border-top: 1px solid rgba(127, 127,
+    127, 0.16); } .split-theme-section-header { display: flex; align-items:
+    baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .split-theme-section-heading { display: grid; gap: 3px; min-width: 0; }
+    .split-theme-section-title { font-size: 0.98rem; font-weight: 600; margin:
+    0; } .split-theme-section-desc { font-size: 0.9rem; margin: 0; line-height:
+    1.4; color: var(--fill-secondary, inherit); } .split-theme-grid { display:
+    grid; gap: 10px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .split-theme-field { display: grid; gap: 6px; min-width: 0; }
+    .split-theme-field > html|label { font-weight: 500; color:
+    var(--fill-secondary, inherit); } .split-theme-field > html|select {
+    min-height: 32px; border-radius: 6px; } @media (max-width: 640px) {
+    .split-theme-grid { grid-template-columns: 1fr; } }
   </html:style>
 
   <html:div class="split-theme-root">
@@ -124,9 +54,18 @@
       <html:div class="split-theme-grid">
         <html:div class="split-theme-field">
           <html:select id="zotero-prefpane-__addonRef__-app-theme">
-            <html:option value="follow" data-l10n-id="pref-theme-follow"></html:option>
-            <html:option value="light" data-l10n-id="pref-theme-light"></html:option>
-            <html:option value="dark" data-l10n-id="pref-theme-dark"></html:option>
+            <html:option
+              value="follow"
+              data-l10n-id="pref-theme-follow"
+            ></html:option>
+            <html:option
+              value="light"
+              data-l10n-id="pref-theme-light"
+            ></html:option>
+            <html:option
+              value="dark"
+              data-l10n-id="pref-theme-dark"
+            ></html:option>
           </html:select>
         </html:div>
       </html:div>
@@ -149,9 +88,18 @@
             data-l10n-id="pref-reader-toolbar-theme"
           ></html:label>
           <html:select id="zotero-prefpane-__addonRef__-reader-toolbar-theme">
-            <html:option value="follow" data-l10n-id="pref-theme-follow"></html:option>
-            <html:option value="light" data-l10n-id="pref-theme-light"></html:option>
-            <html:option value="dark" data-l10n-id="pref-theme-dark"></html:option>
+            <html:option
+              value="follow"
+              data-l10n-id="pref-theme-follow"
+            ></html:option>
+            <html:option
+              value="light"
+              data-l10n-id="pref-theme-light"
+            ></html:option>
+            <html:option
+              value="dark"
+              data-l10n-id="pref-theme-dark"
+            ></html:option>
           </html:select>
         </html:div>
 
@@ -160,10 +108,21 @@
             for="zotero-prefpane-__addonRef__-reader-left-sidebar-theme"
             data-l10n-id="pref-reader-left-sidebar-theme"
           ></html:label>
-          <html:select id="zotero-prefpane-__addonRef__-reader-left-sidebar-theme">
-            <html:option value="follow" data-l10n-id="pref-theme-follow"></html:option>
-            <html:option value="light" data-l10n-id="pref-theme-light"></html:option>
-            <html:option value="dark" data-l10n-id="pref-theme-dark"></html:option>
+          <html:select
+            id="zotero-prefpane-__addonRef__-reader-left-sidebar-theme"
+          >
+            <html:option
+              value="follow"
+              data-l10n-id="pref-theme-follow"
+            ></html:option>
+            <html:option
+              value="light"
+              data-l10n-id="pref-theme-light"
+            ></html:option>
+            <html:option
+              value="dark"
+              data-l10n-id="pref-theme-dark"
+            ></html:option>
           </html:select>
         </html:div>
 
@@ -173,9 +132,18 @@
             data-l10n-id="pref-reader-content-theme"
           ></html:label>
           <html:select id="zotero-prefpane-__addonRef__-reader-theme">
-            <html:option value="follow" data-l10n-id="pref-theme-follow"></html:option>
-            <html:option value="light" data-l10n-id="pref-theme-light"></html:option>
-            <html:option value="dark" data-l10n-id="pref-theme-dark"></html:option>
+            <html:option
+              value="follow"
+              data-l10n-id="pref-theme-follow"
+            ></html:option>
+            <html:option
+              value="light"
+              data-l10n-id="pref-theme-light"
+            ></html:option>
+            <html:option
+              value="dark"
+              data-l10n-id="pref-theme-dark"
+            ></html:option>
           </html:select>
         </html:div>
 
@@ -185,9 +153,18 @@
             data-l10n-id="pref-reader-sidebar-theme"
           ></html:label>
           <html:select id="zotero-prefpane-__addonRef__-reader-sidebar-theme">
-            <html:option value="follow" data-l10n-id="pref-theme-follow"></html:option>
-            <html:option value="light" data-l10n-id="pref-theme-light"></html:option>
-            <html:option value="dark" data-l10n-id="pref-theme-dark"></html:option>
+            <html:option
+              value="follow"
+              data-l10n-id="pref-theme-follow"
+            ></html:option>
+            <html:option
+              value="light"
+              data-l10n-id="pref-theme-light"
+            ></html:option>
+            <html:option
+              value="dark"
+              data-l10n-id="pref-theme-dark"
+            ></html:option>
           </html:select>
         </html:div>
       </html:div>

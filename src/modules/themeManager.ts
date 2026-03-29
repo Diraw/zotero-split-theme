@@ -214,8 +214,7 @@ function registerWindow(win: Window) {
     return;
   }
 
-  const state: WindowState = {
-  };
+  const state: WindowState = {};
   windowStates.set(win, state);
 
   refreshWindowSoon(win, 0);
@@ -334,7 +333,13 @@ function applyAppThemeToDocument(doc: Document, theme: ThemeMode) {
     return;
   }
 
-  setThemeOnDocument(doc, APP_ATTR, APP_STYLE_ID, theme, buildAppThemeCSS(theme));
+  setThemeOnDocument(
+    doc,
+    APP_ATTR,
+    APP_STYLE_ID,
+    theme,
+    buildAppThemeCSS(theme),
+  );
 }
 
 function applyReaderToolbarThemeToOpenReaders(theme: ThemeMode) {
@@ -484,10 +489,7 @@ function setThemeOnDocument(
   }
 
   let style = doc.getElementById(styleID) as HTMLStyleElement | null;
-  if (
-    root.getAttribute(attrName) === theme &&
-    style?.textContent === cssText
-  ) {
+  if (root.getAttribute(attrName) === theme && style?.textContent === cssText) {
     return;
   }
 
@@ -502,7 +504,11 @@ function setThemeOnDocument(
   style.textContent = cssText;
 }
 
-function clearThemeFromDocument(doc: Document, attrName: string, styleID: string) {
+function clearThemeFromDocument(
+  doc: Document,
+  attrName: string,
+  styleID: string,
+) {
   doc.documentElement?.removeAttribute(attrName);
   doc.getElementById(styleID)?.remove();
 }
