@@ -16,14 +16,15 @@
     baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
     .split-theme-section-heading { display: grid; gap: 3px; min-width: 0; }
     .split-theme-section-title { font-size: 0.98rem; font-weight: 600; margin:
-    0; } .split-theme-section-desc { font-size: 0.9rem; margin: 0; line-height:
-    1.4; color: var(--fill-secondary, inherit); } .split-theme-grid { display:
-    grid; gap: 10px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .split-theme-field { display: grid; gap: 6px; min-width: 0; }
-    .split-theme-field > html|label { font-weight: 500; color:
-    var(--fill-secondary, inherit); } .split-theme-field > html|select {
-    min-height: 32px; border-radius: 6px; } @media (max-width: 640px) {
-    .split-theme-grid { grid-template-columns: 1fr; } }
+    0; } .split-theme-grid { display: grid; gap: 10px 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); } .split-theme-field {
+    display: grid; gap: 6px; min-width: 0; } .split-theme-field > html|label {
+    font-weight: 500; color: var(--fill-secondary, inherit); }
+    .split-theme-control { width: 100%; max-width: 100%; min-width: 0; margin:
+    0; } .split-theme-control-select { min-height: 32px; border-radius: 6px; }
+    .split-theme-field > html|select[hidden], .split-theme-field >
+    menulist[hidden="true"] { display: none !important; } @media (max-width:
+    640px) { .split-theme-grid { grid-template-columns: 1fr; } }
   </html:style>
 
   <html:div class="split-theme-root">
@@ -53,7 +54,19 @@
 
       <html:div class="split-theme-grid">
         <html:div class="split-theme-field">
-          <html:select id="zotero-prefpane-__addonRef__-app-theme">
+          <menulist
+            id="zotero-prefpane-__addonRef__-app-theme-menulist"
+            native="true"
+            class="split-theme-control split-theme-control-menulist"
+            preference="extensions.zotero.zoterosplittheme.appTheme"
+            hidden="true"
+          >
+            <menupopup />
+          </menulist>
+          <html:select
+            id="zotero-prefpane-__addonRef__-app-theme-select"
+            class="split-theme-control split-theme-control-select"
+          >
             <html:option
               value="follow"
               data-l10n-id="pref-theme-follow"
@@ -83,11 +96,20 @@
 
       <html:div class="split-theme-grid">
         <html:div class="split-theme-field">
-          <html:label
-            for="zotero-prefpane-__addonRef__-reader-toolbar-theme"
-            data-l10n-id="pref-reader-toolbar-theme"
-          ></html:label>
-          <html:select id="zotero-prefpane-__addonRef__-reader-toolbar-theme">
+          <html:label data-l10n-id="pref-reader-toolbar-theme"></html:label>
+          <menulist
+            id="zotero-prefpane-__addonRef__-reader-toolbar-theme-menulist"
+            native="true"
+            class="split-theme-control split-theme-control-menulist"
+            preference="extensions.zotero.zoterosplittheme.readerToolbarTheme"
+            hidden="true"
+          >
+            <menupopup />
+          </menulist>
+          <html:select
+            id="zotero-prefpane-__addonRef__-reader-toolbar-theme-select"
+            class="split-theme-control split-theme-control-select"
+          >
             <html:option
               value="follow"
               data-l10n-id="pref-theme-follow"
@@ -105,11 +127,20 @@
 
         <html:div class="split-theme-field">
           <html:label
-            for="zotero-prefpane-__addonRef__-reader-left-sidebar-theme"
             data-l10n-id="pref-reader-left-sidebar-theme"
           ></html:label>
+          <menulist
+            id="zotero-prefpane-__addonRef__-reader-left-sidebar-theme-menulist"
+            native="true"
+            class="split-theme-control split-theme-control-menulist"
+            preference="extensions.zotero.zoterosplittheme.readerLeftSidebarTheme"
+            hidden="true"
+          >
+            <menupopup />
+          </menulist>
           <html:select
-            id="zotero-prefpane-__addonRef__-reader-left-sidebar-theme"
+            id="zotero-prefpane-__addonRef__-reader-left-sidebar-theme-select"
+            class="split-theme-control split-theme-control-select"
           >
             <html:option
               value="follow"
@@ -127,33 +158,19 @@
         </html:div>
 
         <html:div class="split-theme-field">
-          <html:label
-            for="zotero-prefpane-__addonRef__-reader-theme"
-            data-l10n-id="pref-reader-content-theme"
-          ></html:label>
-          <html:select id="zotero-prefpane-__addonRef__-reader-theme">
-            <html:option
-              value="follow"
-              data-l10n-id="pref-theme-follow"
-            ></html:option>
-            <html:option
-              value="light"
-              data-l10n-id="pref-theme-light"
-            ></html:option>
-            <html:option
-              value="dark"
-              data-l10n-id="pref-theme-dark"
-            ></html:option>
-          </html:select>
-        </html:div>
-
-        <html:div class="split-theme-field">
-          <html:label
-            for="zotero-prefpane-__addonRef__-reader-background-theme"
-            data-l10n-id="pref-reader-background-theme"
-          ></html:label>
+          <html:label data-l10n-id="pref-reader-content-theme"></html:label>
+          <menulist
+            id="zotero-prefpane-__addonRef__-reader-theme-menulist"
+            native="true"
+            class="split-theme-control split-theme-control-menulist"
+            preference="extensions.zotero.zoterosplittheme.readerTheme"
+            hidden="true"
+          >
+            <menupopup />
+          </menulist>
           <html:select
-            id="zotero-prefpane-__addonRef__-reader-background-theme"
+            id="zotero-prefpane-__addonRef__-reader-theme-select"
+            class="split-theme-control split-theme-control-select"
           >
             <html:option
               value="follow"
@@ -171,11 +188,50 @@
         </html:div>
 
         <html:div class="split-theme-field">
-          <html:label
-            for="zotero-prefpane-__addonRef__-reader-sidebar-theme"
-            data-l10n-id="pref-reader-sidebar-theme"
-          ></html:label>
-          <html:select id="zotero-prefpane-__addonRef__-reader-sidebar-theme">
+          <html:label data-l10n-id="pref-reader-background-theme"></html:label>
+          <menulist
+            id="zotero-prefpane-__addonRef__-reader-background-theme-menulist"
+            native="true"
+            class="split-theme-control split-theme-control-menulist"
+            preference="extensions.zotero.zoterosplittheme.readerBackgroundTheme"
+            hidden="true"
+          >
+            <menupopup />
+          </menulist>
+          <html:select
+            id="zotero-prefpane-__addonRef__-reader-background-theme-select"
+            class="split-theme-control split-theme-control-select"
+          >
+            <html:option
+              value="follow"
+              data-l10n-id="pref-theme-follow"
+            ></html:option>
+            <html:option
+              value="light"
+              data-l10n-id="pref-theme-light"
+            ></html:option>
+            <html:option
+              value="dark"
+              data-l10n-id="pref-theme-dark"
+            ></html:option>
+          </html:select>
+        </html:div>
+
+        <html:div class="split-theme-field">
+          <html:label data-l10n-id="pref-reader-sidebar-theme"></html:label>
+          <menulist
+            id="zotero-prefpane-__addonRef__-reader-sidebar-theme-menulist"
+            native="true"
+            class="split-theme-control split-theme-control-menulist"
+            preference="extensions.zotero.zoterosplittheme.readerSidebarTheme"
+            hidden="true"
+          >
+            <menupopup />
+          </menulist>
+          <html:select
+            id="zotero-prefpane-__addonRef__-reader-sidebar-theme-select"
+            class="split-theme-control split-theme-control-select"
+          >
             <html:option
               value="follow"
               data-l10n-id="pref-theme-follow"

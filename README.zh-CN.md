@@ -1,6 +1,6 @@
 # Zotero Split Theme
 
-[![Zotero 8](https://img.shields.io/badge/Zotero-8-green?&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme)](https://github.com/Diraw/zotero-split-theme/releases) [![Downloads](https://img.shields.io/github/downloads/Diraw/zotero-split-theme/total?color=yellow)](https://github.com/Diraw/zotero-split-theme/releases/) [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+[![Zotero](https://img.shields.io/badge/Zotero-7/8-green?&logo=zotero&logoColor=CC2936)](https://www.zotero.org/) [![Release](https://img.shields.io/github/v/release/Diraw/zotero-split-theme)](https://github.com/Diraw/zotero-split-theme/releases) [![Downloads](https://img.shields.io/github/downloads/Diraw/zotero-split-theme/total?color=yellow)](https://github.com/Diraw/zotero-split-theme/releases/) [![Using Plugin Template](https://img.shields.io/badge/Using-Plugin%20Template-blue?logo=github)](https://github.com/windingwind/zotero-plugin-template)
 
 <p align="right"><a href="README.md">English</a> | <b>中文</b></p>
 
@@ -57,8 +57,8 @@
 
 环境要求：
 
-- Zotero 8 beta
-- Node.js LTS
+- Zotero
+- Node.js
 
 常用命令：
 

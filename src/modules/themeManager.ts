@@ -25,11 +25,20 @@ type ResolvedThemeSettings = {
 };
 
 type ThemeTokens = Record<string, string>;
+type LegacyPDFPageColors = {
+  background: string;
+  foreground: string;
+};
 
 type WindowState = {
   refreshTimer?: number;
   recoveryTimers: Map<number, number>;
   readerLoadListener?: (event: Event) => void;
+};
+
+type TimerHandle = {
+  win: Window;
+  id: number;
 };
 
 const APP_STYLE_ID = "zotero-split-theme-app-style";
@@ -39,12 +48,19 @@ const READER_TOOLBAR_ATTR = "data-zst-reader-toolbar-theme";
 const READER_LEFT_SIDEBAR_STYLE_ID =
   "zotero-split-theme-reader-left-sidebar-style";
 const READER_LEFT_SIDEBAR_ATTR = "data-zst-reader-left-sidebar-theme";
+const READER_THUMBNAIL_STYLE_ID = "zotero-split-theme-reader-thumbnail-style";
+const READER_THUMBNAIL_ATTR = "data-zst-reader-thumbnail-theme";
 const READER_BACKGROUND_STYLE_ID = "zotero-split-theme-reader-background-style";
 const READER_BACKGROUND_ATTR = "data-zst-reader-background-theme";
 const READER_SIDEBAR_STYLE_ID = "zotero-split-theme-reader-sidebar-style";
 const READER_SIDEBAR_ATTR = "data-zst-reader-sidebar-theme";
 const cachedNativeThemeTokens: Partial<Record<ExplicitThemeMode, ThemeTokens>> =
   {};
+const appliedReaderColorSchemes = new WeakMap<any, ExplicitThemeMode | null>();
+const pendingReaderColorSchemeReadyAt = new WeakMap<any, number>();
+const READER_COLOR_SCHEME_STABILIZE_DELAY = 700;
+const READER_COLOR_SCHEME_STARTUP_DELAY = 2500;
+let startupTimestamp = 0;
 
 const OFFICIAL_APP_TOKENS: Record<ExplicitThemeMode, Record<string, string>> = {
   light: {
@@ -190,6 +206,10 @@ const OFFICIAL_APP_TOKENS: Record<ExplicitThemeMode, Record<string, string>> = {
 const THEME_TOKEN_KEYS = Object.keys(OFFICIAL_APP_TOKENS.light);
 
 const windowStates = new Map<Window, WindowState>();
+const readerRefreshState = {
+  refreshTimer: undefined as TimerHandle | undefined,
+  recoveryTimers: new Map<number, TimerHandle>(),
+};
 
 export const SplitThemeManager = {
   startup,
@@ -199,6 +219,7 @@ export const SplitThemeManager = {
   refreshAllWindows,
   refreshAllWindowsSoon,
   refreshAllWindowsWithRecovery,
+  hasLegacyReaders,
 };
 
 export function normalizeThemeMode(value: unknown): ThemeMode {
@@ -209,17 +230,24 @@ export function normalizeThemeMode(value: unknown): ThemeMode {
 }
 
 function startup() {
-  refreshAllWindows();
+  startupTimestamp = Date.now();
+  cleanupDeadWindows();
+  for (const win of Zotero.getMainWindows()) {
+    registerWindow(win);
+    applyWindowThemes(win);
+  }
+  refreshReaderThemesSoon(READER_COLOR_SCHEME_STARTUP_DELAY);
 }
 
 function shutdown() {
+  const openReaders = getOpenReaders();
+  const readersAndPreviews = getOpenReadersAndPreviews();
   for (const win of Array.from(windowStates.keys())) {
     unregisterWindow(win);
   }
-  clearReaderLeftSidebarThemeFromOpenReaders();
-  clearReaderToolbarThemeFromOpenReaders();
-  clearReaderBackgroundThemeFromOpenReaders();
-  resetReaderThemeToDefault();
+  clearReaderRefreshTimers();
+  clearReaderThemesFromReaders(openReaders, readersAndPreviews);
+  resetReaderThemeToDefaultForReaders(openReaders);
 }
 
 function registerWindow(win: Window) {
@@ -238,7 +266,7 @@ function registerWindow(win: Window) {
   windowStates.set(win, state);
   state.readerLoadListener = (event: Event) => {
     const doc = event.target as Document | null;
-    if (!isReaderShellDocument(doc)) {
+    if (!doc || !isLegacyPDFViewerDocument(doc)) {
       return;
     }
     refreshAllWindowsWithRecovery([0, 150, 500]);
@@ -277,6 +305,7 @@ function refreshAllWindows() {
     registerWindow(win);
     applyWindowThemes(win);
   }
+  refreshReaderThemes();
 }
 
 function refreshAllWindowsSoon(delay = 0) {
@@ -285,6 +314,7 @@ function refreshAllWindowsSoon(delay = 0) {
     registerWindow(win);
     refreshWindowSoon(win, delay);
   }
+  refreshReaderThemesSoon(delay);
 }
 
 function refreshAllWindowsWithRecovery(delays: number[]) {
@@ -292,6 +322,9 @@ function refreshAllWindowsWithRecovery(delays: number[]) {
   for (const win of Zotero.getMainWindows()) {
     registerWindow(win);
     scheduleWindowRecoveryRefreshes(win, delays);
+  }
+  if (hasLegacyReaders()) {
+    scheduleReaderRecoveryRefreshes(delays);
   }
 }
 
@@ -347,24 +380,109 @@ function applyWindowThemes(win: Window) {
       READER_SIDEBAR_ATTR,
       READER_SIDEBAR_STYLE_ID,
     );
-    clearReaderLeftSidebarThemeFromOpenReaders();
-    clearReaderToolbarThemeFromOpenReaders();
-    clearReaderBackgroundThemeFromOpenReaders();
-    resetReaderThemeToDefault();
     return;
   }
 
   const resolvedSettings = resolveThemeSettings(win.document, settings);
   applyAppThemeToDocument(win.document, settings.appTheme);
   applyReaderSidebarThemeToWindow(win, resolvedSettings.readerSidebarTheme);
-  applyReaderLeftSidebarThemeToOpenReaders(
-    resolvedSettings.readerLeftSidebarTheme,
-  );
-  applyReaderToolbarThemeToOpenReaders(resolvedSettings.readerToolbarTheme);
-  applyReaderBackgroundThemeToOpenReaders(
-    resolvedSettings.readerBackgroundTheme,
-  );
-  applyReaderThemeToOpenReaders(resolvedSettings.readerTheme);
+}
+
+function refreshReaderThemes() {
+  const settings = readThemeSettings();
+  const openReaders = getOpenReaders();
+  const readersAndPreviews = getOpenReadersAndPreviews();
+
+  if (!settings.enabled) {
+    clearReaderThemesFromReaders(openReaders, readersAndPreviews);
+    resetReaderThemeToDefaultForReaders(openReaders);
+    return;
+  }
+
+  const resolutionDoc = getThemeResolutionDocument();
+  if (!resolutionDoc) {
+    return;
+  }
+  const resolvedSettings = resolveThemeSettings(resolutionDoc, settings);
+  applyReaderThemesToReaders(openReaders, readersAndPreviews, resolvedSettings);
+}
+
+function refreshReaderThemesSoon(delay = 0) {
+  const timerWin = getThemeTimerWindow();
+  if (!timerWin) {
+    return;
+  }
+
+  if (readerRefreshState.refreshTimer) {
+    readerRefreshState.refreshTimer.win.clearTimeout(
+      readerRefreshState.refreshTimer.id,
+    );
+  }
+
+  readerRefreshState.refreshTimer = {
+    win: timerWin,
+    id: timerWin.setTimeout(() => {
+      readerRefreshState.refreshTimer = undefined;
+      refreshReaderThemes();
+    }, delay),
+  };
+}
+
+function scheduleReaderRecoveryRefreshes(delays: number[]) {
+  const timerWin = getThemeTimerWindow();
+  if (!timerWin) {
+    return;
+  }
+
+  for (const delay of delays) {
+    const existingTimer = readerRefreshState.recoveryTimers.get(delay);
+    if (existingTimer) {
+      existingTimer.win.clearTimeout(existingTimer.id);
+    }
+
+    const timer: TimerHandle = {
+      win: timerWin,
+      id: timerWin.setTimeout(() => {
+        readerRefreshState.recoveryTimers.delete(delay);
+        refreshReaderThemes();
+      }, delay),
+    };
+    readerRefreshState.recoveryTimers.set(delay, timer);
+  }
+}
+
+function getThemeTimerWindow() {
+  for (const win of Zotero.getMainWindows()) {
+    if (isWindowAlive(win)) {
+      return win;
+    }
+  }
+
+  for (const win of windowStates.keys()) {
+    if (isWindowAlive(win)) {
+      return win;
+    }
+  }
+
+  return null;
+}
+
+function getThemeResolutionDocument() {
+  return getThemeTimerWindow()?.document ?? null;
+}
+
+function clearReaderRefreshTimers() {
+  if (readerRefreshState.refreshTimer) {
+    readerRefreshState.refreshTimer.win.clearTimeout(
+      readerRefreshState.refreshTimer.id,
+    );
+    readerRefreshState.refreshTimer = undefined;
+  }
+
+  for (const timer of readerRefreshState.recoveryTimers.values()) {
+    timer.win.clearTimeout(timer.id);
+  }
+  readerRefreshState.recoveryTimers.clear();
 }
 
 function cleanupDeadWindows() {
@@ -445,92 +563,6 @@ function applyAppThemeToDocument(doc: Document, theme: ThemeMode) {
   );
 }
 
-function applyReaderToolbarThemeToOpenReaders(theme: ExplicitThemeMode) {
-  for (const reader of getOpenReaders()) {
-    const doc = getReaderShellDocument(reader);
-    if (!doc) {
-      continue;
-    }
-
-    setThemeOnDocument(
-      doc,
-      READER_TOOLBAR_ATTR,
-      READER_TOOLBAR_STYLE_ID,
-      theme,
-      buildReaderToolbarThemeCSS(theme),
-    );
-  }
-}
-
-function applyReaderLeftSidebarThemeToOpenReaders(theme: ExplicitThemeMode) {
-  for (const reader of getOpenReaders()) {
-    const doc = getReaderShellDocument(reader);
-    if (!doc) {
-      continue;
-    }
-
-    setThemeOnDocument(
-      doc,
-      READER_LEFT_SIDEBAR_ATTR,
-      READER_LEFT_SIDEBAR_STYLE_ID,
-      theme,
-      buildReaderLeftSidebarThemeCSS(theme),
-    );
-  }
-}
-
-function clearReaderToolbarThemeFromOpenReaders() {
-  for (const reader of getOpenReaders()) {
-    const doc = getReaderShellDocument(reader);
-    if (!doc) {
-      continue;
-    }
-
-    clearThemeFromDocument(doc, READER_TOOLBAR_ATTR, READER_TOOLBAR_STYLE_ID);
-  }
-}
-
-function clearReaderLeftSidebarThemeFromOpenReaders() {
-  for (const reader of getOpenReaders()) {
-    const doc = getReaderShellDocument(reader);
-    if (!doc) {
-      continue;
-    }
-
-    clearThemeFromDocument(
-      doc,
-      READER_LEFT_SIDEBAR_ATTR,
-      READER_LEFT_SIDEBAR_STYLE_ID,
-    );
-  }
-}
-
-function applyReaderBackgroundThemeToOpenReaders(theme: ExplicitThemeMode) {
-  for (const reader of getOpenReadersAndPreviews()) {
-    for (const doc of getReaderBackgroundDocuments(reader)) {
-      setThemeOnDocument(
-        doc,
-        READER_BACKGROUND_ATTR,
-        READER_BACKGROUND_STYLE_ID,
-        theme,
-        buildReaderBackgroundThemeCSS(theme),
-      );
-    }
-  }
-}
-
-function clearReaderBackgroundThemeFromOpenReaders() {
-  for (const reader of getOpenReadersAndPreviews()) {
-    for (const doc of getReaderBackgroundDocuments(reader, true)) {
-      clearThemeFromDocument(
-        doc,
-        READER_BACKGROUND_ATTR,
-        READER_BACKGROUND_STYLE_ID,
-      );
-    }
-  }
-}
-
 function applyReaderSidebarThemeToWindow(
   win: Window,
   theme: ExplicitThemeMode,
@@ -544,26 +576,236 @@ function applyReaderSidebarThemeToWindow(
   );
 }
 
-function applyReaderThemeToOpenReaders(theme: ExplicitThemeMode) {
-  for (const reader of getOpenReadersAndPreviews()) {
+function applyReaderThemeToReaders(readers: any[], theme: ExplicitThemeMode) {
+  let needsDeferredRefresh = false;
+  for (const reader of readers) {
+    if (!canApplyReaderColorScheme(reader)) {
+      continue;
+    }
+    if (appliedReaderColorSchemes.get(reader) === theme) {
+      continue;
+    }
+    if (!isReaderColorSchemeReady(reader)) {
+      needsDeferredRefresh = true;
+      continue;
+    }
     try {
       if (typeof reader?.setColorScheme === "function") {
         reader.setColorScheme(theme);
+        appliedReaderColorSchemes.set(reader, theme);
+        pendingReaderColorSchemeReadyAt.delete(reader);
       }
     } catch (_error) {
       // Reader can disappear during async tab/window teardown.
     }
   }
+  if (needsDeferredRefresh) {
+    refreshReaderThemesSoon(READER_COLOR_SCHEME_STABILIZE_DELAY);
+  }
 }
 
-function resetReaderThemeToDefault() {
-  for (const reader of getOpenReadersAndPreviews()) {
+function resetReaderThemeToDefaultForReaders(readers: any[]) {
+  let needsDeferredRefresh = false;
+  for (const reader of readers) {
+    if (!canApplyReaderColorScheme(reader)) {
+      appliedReaderColorSchemes.delete(reader);
+      pendingReaderColorSchemeReadyAt.delete(reader);
+      continue;
+    }
+    if (appliedReaderColorSchemes.get(reader) === null) {
+      continue;
+    }
+    if (!isReaderColorSchemeReady(reader)) {
+      needsDeferredRefresh = true;
+      continue;
+    }
     try {
       if (typeof reader?.setColorScheme === "function") {
         reader.setColorScheme(null);
+        appliedReaderColorSchemes.set(reader, null);
+        pendingReaderColorSchemeReadyAt.delete(reader);
       }
     } catch (_error) {
       // Reader can disappear during async tab/window teardown.
+    }
+  }
+  if (needsDeferredRefresh) {
+    refreshReaderThemesSoon(READER_COLOR_SCHEME_STABILIZE_DELAY);
+  }
+}
+
+function applyReaderThemesToReaders(
+  openReaders: any[],
+  readersAndPreviews: any[],
+  settings: ResolvedThemeSettings,
+) {
+  // Zotero 7 still needs the legacy PDF.js/sidebar pipeline, while Zotero 8
+  // uses the modern reader view. CSS-based chrome themes therefore target both
+  // open tabs and attachment previews.
+  applyReaderToolbarThemeToReaders(openReaders, settings.readerToolbarTheme);
+  applyReaderLeftSidebarThemeToReaders(
+    readersAndPreviews,
+    settings.readerLeftSidebarTheme,
+  );
+  applyReaderThumbnailThemeToReaders(readersAndPreviews, settings.readerTheme);
+  applyReaderBackgroundThemeToReaders(
+    readersAndPreviews,
+    settings.readerBackgroundTheme,
+  );
+  // Zotero 8's native `setColorScheme()` mutates the live PDF.js viewer state.
+  // Only apply it to fully opened reader tabs; preview readers can still be in
+  // their create/render pipeline and will throw if we touch them too early.
+  applyReaderThemeToReaders(openReaders, settings.readerTheme);
+}
+
+function clearReaderThemesFromReaders(
+  openReaders: any[],
+  readersAndPreviews: any[],
+) {
+  clearReaderToolbarThemeFromReaders(openReaders);
+  clearReaderLeftSidebarThemeFromReaders(readersAndPreviews);
+  clearReaderThumbnailThemeFromReaders(readersAndPreviews);
+  clearReaderBackgroundThemeFromReaders(readersAndPreviews);
+}
+
+function applyReaderToolbarThemeToReaders(
+  readers: any[],
+  theme: ExplicitThemeMode,
+) {
+  const cssText = buildReaderToolbarThemeCSS(theme);
+  for (const reader of readers) {
+    const doc = getReaderShellDocument(reader);
+    if (!doc) {
+      continue;
+    }
+
+    setThemeOnDocument(
+      doc,
+      READER_TOOLBAR_ATTR,
+      READER_TOOLBAR_STYLE_ID,
+      theme,
+      cssText,
+    );
+  }
+}
+
+function clearReaderToolbarThemeFromReaders(readers: any[]) {
+  for (const reader of readers) {
+    const doc = getReaderShellDocument(reader);
+    if (!doc) {
+      continue;
+    }
+
+    clearThemeFromDocument(doc, READER_TOOLBAR_ATTR, READER_TOOLBAR_STYLE_ID);
+  }
+}
+
+function applyReaderLeftSidebarThemeToReaders(
+  readers: any[],
+  theme: ExplicitThemeMode,
+) {
+  const cssText = buildReaderLeftSidebarThemeCSS(theme);
+  for (const reader of readers) {
+    for (const doc of getReaderLeftSidebarDocuments(reader)) {
+      setThemeOnDocument(
+        doc,
+        READER_LEFT_SIDEBAR_ATTR,
+        READER_LEFT_SIDEBAR_STYLE_ID,
+        theme,
+        cssText,
+      );
+    }
+  }
+}
+
+function clearReaderLeftSidebarThemeFromReaders(readers: any[]) {
+  for (const reader of readers) {
+    for (const doc of getReaderLeftSidebarDocuments(reader, true)) {
+      clearThemeFromDocument(
+        doc,
+        READER_LEFT_SIDEBAR_ATTR,
+        READER_LEFT_SIDEBAR_STYLE_ID,
+      );
+    }
+  }
+}
+
+function applyReaderThumbnailThemeToReaders(
+  readers: any[],
+  theme: ExplicitThemeMode,
+) {
+  const cssText = buildReaderThumbnailThemeCSS(theme);
+  for (const reader of readers) {
+    let needsLegacyRerender = false;
+    for (const doc of getReaderLeftSidebarDocuments(reader)) {
+      const changed = setThemeOnDocument(
+        doc,
+        READER_THUMBNAIL_ATTR,
+        READER_THUMBNAIL_STYLE_ID,
+        theme,
+        cssText,
+      );
+      if (!changed) {
+        continue;
+      }
+      if (applyLegacyReaderThumbnailTheme(doc, theme)) {
+        needsLegacyRerender = true;
+      }
+    }
+    if (needsLegacyRerender) {
+      rerenderLegacyReaderThumbnails(reader);
+    }
+  }
+}
+
+function clearReaderThumbnailThemeFromReaders(readers: any[]) {
+  for (const reader of readers) {
+    let needsLegacyRerender = false;
+    for (const doc of getReaderLeftSidebarDocuments(reader, true)) {
+      const changed = clearThemeFromDocument(
+        doc,
+        READER_THUMBNAIL_ATTR,
+        READER_THUMBNAIL_STYLE_ID,
+      );
+      if (!changed) {
+        continue;
+      }
+      if (resetLegacyReaderThumbnailTheme(doc)) {
+        needsLegacyRerender = true;
+      }
+    }
+    if (needsLegacyRerender) {
+      rerenderLegacyReaderThumbnails(reader);
+    }
+  }
+}
+
+function applyReaderBackgroundThemeToReaders(
+  readers: any[],
+  theme: ExplicitThemeMode,
+) {
+  const cssText = buildReaderBackgroundThemeCSS(theme);
+  for (const reader of readers) {
+    for (const doc of getReaderBackgroundDocuments(reader)) {
+      setThemeOnDocument(
+        doc,
+        READER_BACKGROUND_ATTR,
+        READER_BACKGROUND_STYLE_ID,
+        theme,
+        cssText,
+      );
+    }
+  }
+}
+
+function clearReaderBackgroundThemeFromReaders(readers: any[]) {
+  for (const reader of readers) {
+    for (const doc of getReaderBackgroundDocuments(reader, true)) {
+      clearThemeFromDocument(
+        doc,
+        READER_BACKGROUND_ATTR,
+        READER_BACKGROUND_STYLE_ID,
+      );
     }
   }
 }
@@ -593,12 +835,336 @@ function getOpenReadersAndPreviews() {
   return Array.from(readers);
 }
 
+function hasLegacyReaders() {
+  return getOpenReadersAndPreviews().some((reader) => isLegacyReader(reader));
+}
+
+function canApplyReaderColorScheme(reader: any) {
+  const primaryDoc = getReaderViewDocument(
+    reader?._internalReader?._primaryView,
+  );
+  if (primaryDoc) {
+    return true;
+  }
+
+  const secondaryDoc = getReaderViewDocument(
+    reader?._internalReader?._secondaryView,
+  );
+  if (secondaryDoc) {
+    return true;
+  }
+
+  const shellDoc = getReaderShellDocument(reader);
+  return Boolean(shellDoc && isLegacyPDFViewerDocument(shellDoc));
+}
+
+function isReaderColorSchemeReady(reader: any) {
+  if (isLegacyReader(reader)) {
+    return true;
+  }
+
+  // Cold start is the riskiest point for Zotero 8: the reader object may exist
+  // before PDF.js has completed its first render. Hold back native color-scheme
+  // updates until startup stabilizes, then use the shorter per-reader debounce.
+  if (
+    startupTimestamp &&
+    Date.now() - startupTimestamp < READER_COLOR_SCHEME_STARTUP_DELAY
+  ) {
+    return false;
+  }
+
+  if (appliedReaderColorSchemes.has(reader)) {
+    return true;
+  }
+
+  const now = Date.now();
+  const readyAt = pendingReaderColorSchemeReadyAt.get(reader);
+  if (readyAt === undefined) {
+    pendingReaderColorSchemeReadyAt.set(
+      reader,
+      now + READER_COLOR_SCHEME_STABILIZE_DELAY,
+    );
+    return false;
+  }
+
+  return now >= readyAt;
+}
+
+function isLegacyReader(reader: any) {
+  const primaryDoc = getReaderViewDocument(
+    reader?._internalReader?._primaryView,
+  );
+  if (primaryDoc && isLegacyPDFViewerDocument(primaryDoc)) {
+    return true;
+  }
+
+  const secondaryDoc = getReaderViewDocument(
+    reader?._internalReader?._secondaryView,
+  );
+  if (secondaryDoc && isLegacyPDFViewerDocument(secondaryDoc)) {
+    return true;
+  }
+
+  const shellDoc = getReaderShellDocument(reader);
+  return Boolean(shellDoc && isLegacyPDFViewerDocument(shellDoc));
+}
+
 function getReaderShellDocument(reader: any) {
   try {
     return (reader?._iframeWindow?.document as Document | undefined) || null;
   } catch (_error) {
     return null;
   }
+}
+
+function getLegacyPDFViewerApplication(doc: Document) {
+  try {
+    return getLegacyPDFViewerWindow(doc)?.PDFViewerApplication ?? null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function getLegacyPDFViewerWindow(doc: Document) {
+  try {
+    const view = doc.defaultView as
+      | (Window & {
+          PDFViewerApplication?: any;
+          wrappedJSObject?: Window & {
+            PDFViewerApplication?: any;
+            Object?: ObjectConstructor;
+          };
+          Object?: ObjectConstructor;
+        })
+      | null;
+    return view?.wrappedJSObject ?? view ?? null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function isLegacyPDFViewerDocument(doc: Document) {
+  return Boolean(
+    doc.getElementById("viewerContainer") &&
+    doc.getElementById("sidebarContainer") &&
+    getLegacyPDFViewerApplication(doc),
+  );
+}
+
+function getLegacyReaderThumbnailPageColors(
+  theme: ExplicitThemeMode,
+): LegacyPDFPageColors {
+  return theme === "dark"
+    ? {
+        background: "#272727",
+        foreground: "#f5f5f5",
+      }
+    : {
+        background: "#ffffff",
+        foreground: "#202020",
+      };
+}
+
+function refreshLegacyThumbnailViewer(viewerApplication: any) {
+  try {
+    viewerApplication?.forceRendering?.();
+  } catch (_error) {
+    // Older PDF.js viewer internals are optional across Zotero versions.
+  }
+
+  try {
+    viewerApplication?.pdfRenderingQueue?.renderHighestPriority?.();
+  } catch (_error) {
+    // Older PDF.js viewer internals are optional across Zotero versions.
+  }
+}
+
+function createLegacyPageColorsForViewer(
+  doc: Document,
+  pageColors: LegacyPDFPageColors | null,
+) {
+  if (!pageColors) {
+    return null;
+  }
+
+  const targetView = getLegacyPDFViewerWindow(doc);
+  if (!targetView) {
+    return pageColors;
+  }
+
+  try {
+    const TargetObject = targetView.Object ?? Object;
+    const scopedPageColors = new TargetObject() as LegacyPDFPageColors;
+    scopedPageColors.background = pageColors.background;
+    scopedPageColors.foreground = pageColors.foreground;
+    return scopedPageColors;
+  } catch (_error) {
+    return pageColors;
+  }
+}
+
+function getLegacyReaderPrimaryView(reader: any) {
+  return reader?._internalReader?._primaryView ?? reader?._primaryView ?? null;
+}
+
+function getLegacyReaderThumbnailController(reader: any) {
+  const primaryView = getLegacyReaderPrimaryView(reader);
+  const primaryDoc = getReaderViewDocument(primaryView);
+  if (!primaryDoc || !isLegacyPDFViewerDocument(primaryDoc)) {
+    return null;
+  }
+  return primaryView?._pdfThumbnails ?? null;
+}
+
+function rerenderLegacyThumbnail(thumbnail: any) {
+  try {
+    thumbnail?.reset?.();
+  } catch (_error) {
+    // Older thumbnail views may not support reset in every state.
+  }
+}
+
+function rerenderLegacyReaderThumbnails(reader: any) {
+  const pdfThumbnails = getLegacyReaderThumbnailController(reader);
+  if (!pdfThumbnails) {
+    return;
+  }
+
+  if (
+    pdfThumbnails.__zstRenderHookInstalled &&
+    typeof pdfThumbnails.__zstOriginalRender === "function"
+  ) {
+    pdfThumbnails._render = pdfThumbnails.__zstOriginalRender;
+    delete pdfThumbnails.__zstOriginalRender;
+    delete pdfThumbnails.__zstRenderHookInstalled;
+  }
+
+  const thumbnails = Array.isArray(pdfThumbnails?._thumbnails)
+    ? pdfThumbnails._thumbnails
+    : [];
+  const renderedPageIndexes: number[] = [];
+  const fallbackPageIndexes: number[] = [];
+  for (let i = 0; i < thumbnails.length; i += 1) {
+    const thumbnail = thumbnails[i];
+    if (!thumbnail) {
+      continue;
+    }
+    fallbackPageIndexes.push(i);
+    if (thumbnail.image || thumbnail.div?.querySelector?.("img")) {
+      renderedPageIndexes.push(i);
+    }
+  }
+
+  const pageIndexes = renderedPageIndexes.length
+    ? renderedPageIndexes
+    : fallbackPageIndexes;
+  if (pageIndexes.length) {
+    pdfThumbnails.render?.(
+      createLegacyPageIndexArray(thumbnails, pageIndexes),
+      false,
+    );
+  }
+}
+
+function createLegacyPageIndexArray(sourceArray: any, values: number[]) {
+  try {
+    const TargetArray =
+      sourceArray?.constructor && typeof sourceArray.constructor === "function"
+        ? sourceArray.constructor
+        : Array;
+    const scopedValues = new TargetArray();
+    for (const value of values) {
+      scopedValues.push(value);
+    }
+    return scopedValues;
+  } catch (_error) {
+    return values;
+  }
+}
+
+function syncLegacyThumbnailThemeFromDocument(doc: Document) {
+  const theme = doc.documentElement?.getAttribute(READER_THUMBNAIL_ATTR);
+  const pageColors =
+    theme === "light" || theme === "dark"
+      ? getLegacyReaderThumbnailPageColors(theme)
+      : null;
+  setLegacyThumbnailViewerPageColors(doc, pageColors, false);
+}
+
+function installLegacyThumbnailThemeHook(
+  doc: Document,
+  viewerApplication: any,
+) {
+  const pdfSidebar = viewerApplication?.pdfSidebar;
+  if (!pdfSidebar || pdfSidebar.__zstThumbnailThemeHookInstalled) {
+    return;
+  }
+
+  const originalOnUpdateThumbnails = pdfSidebar.onUpdateThumbnails;
+  pdfSidebar.__zstThumbnailThemeHookInstalled = true;
+  pdfSidebar.__zstOriginalOnUpdateThumbnails = originalOnUpdateThumbnails;
+  pdfSidebar.onUpdateThumbnails = (...args: any[]) => {
+    if (typeof originalOnUpdateThumbnails === "function") {
+      originalOnUpdateThumbnails.apply(pdfSidebar, args);
+    }
+    syncLegacyThumbnailThemeFromDocument(doc);
+  };
+}
+
+function setLegacyThumbnailViewerPageColors(
+  doc: Document,
+  pageColors: LegacyPDFPageColors | null,
+  installHook = true,
+) {
+  const viewerApplication = getLegacyPDFViewerApplication(doc);
+  const thumbnailViewer = viewerApplication?.pdfThumbnailViewer;
+  if (!thumbnailViewer) {
+    return;
+  }
+
+  if (installHook) {
+    installLegacyThumbnailThemeHook(doc, viewerApplication);
+  }
+
+  const thumbnails = Array.isArray(thumbnailViewer._thumbnails)
+    ? thumbnailViewer._thumbnails
+    : [];
+  const scopedPageColors = createLegacyPageColorsForViewer(doc, pageColors);
+
+  thumbnailViewer.pageColors = scopedPageColors;
+  for (const thumbnail of thumbnails) {
+    thumbnail.pageColors = scopedPageColors;
+    rerenderLegacyThumbnail(thumbnail);
+  }
+
+  refreshLegacyThumbnailViewer(viewerApplication);
+}
+
+function applyLegacyReaderThumbnailTheme(
+  doc: Document,
+  theme: ExplicitThemeMode,
+) {
+  if (!isLegacyPDFViewerDocument(doc)) {
+    return false;
+  }
+
+  // Zotero 7 thumbnails still depend on PDF.js `pageColors`. Keep that legacy
+  // state in sync with the effective thumbnail theme before asking the old
+  // rendering queue to repaint.
+  setLegacyThumbnailViewerPageColors(
+    doc,
+    getLegacyReaderThumbnailPageColors(theme),
+  );
+  return true;
+}
+
+function resetLegacyReaderThumbnailTheme(doc: Document) {
+  if (!isLegacyPDFViewerDocument(doc)) {
+    return false;
+  }
+
+  setLegacyThumbnailViewerPageColors(doc, null);
+  return true;
 }
 
 function getReaderBackgroundDocuments(reader: any, includeShell = false) {
@@ -628,6 +1194,21 @@ function getReaderBackgroundDocuments(reader: any, includeShell = false) {
   return docs;
 }
 
+function getReaderLeftSidebarDocuments(reader: any, includeShell = true) {
+  const seen = new Set<Document>();
+  const docs: Document[] = [];
+
+  for (const doc of getReaderBackgroundDocuments(reader, includeShell)) {
+    if (seen.has(doc)) {
+      continue;
+    }
+    seen.add(doc);
+    docs.push(doc);
+  }
+
+  return docs;
+}
+
 function getReaderViewDocument(view: any) {
   try {
     return (view?._iframeWindow?.document as Document | undefined) || null;
@@ -649,10 +1230,14 @@ function isReaderShellDocument(doc: Document | null) {
   }
 
   try {
-    return doc.location?.href === "resource://zotero/reader/reader.html";
+    if (doc.location?.href === "resource://zotero/reader/reader.html") {
+      return true;
+    }
   } catch (_error) {
-    return false;
+    return isLegacyPDFViewerDocument(doc);
   }
+
+  return isLegacyPDFViewerDocument(doc);
 }
 
 function detectDocumentTheme(doc: Document): ExplicitThemeMode {
@@ -825,7 +1410,7 @@ function setThemeOnDocument(
 
   let style = doc.getElementById(styleID) as HTMLStyleElement | null;
   if (root.getAttribute(attrName) === theme && style?.textContent === cssText) {
-    return;
+    return false;
   }
 
   root.setAttribute(attrName, theme);
@@ -837,6 +1422,7 @@ function setThemeOnDocument(
     parent.appendChild(style);
   }
   style.textContent = cssText;
+  return true;
 }
 
 function clearThemeFromDocument(
@@ -844,8 +1430,15 @@ function clearThemeFromDocument(
   attrName: string,
   styleID: string,
 ) {
+  const root = doc.documentElement;
+  const attrPresent = root?.hasAttribute(attrName) ?? false;
+  const style = doc.getElementById(styleID);
+  if (!attrPresent && !style) {
+    return false;
+  }
   doc.documentElement?.removeAttribute(attrName);
-  doc.getElementById(styleID)?.remove();
+  style?.remove();
+  return true;
 }
 
 function buildTokenDeclarations(theme: Exclude<ThemeMode, "follow">) {
@@ -948,6 +1541,8 @@ function buildReaderLeftSidebarThemeCSS(theme: Exclude<ThemeMode, "follow">) {
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] :is(
   #sidebarContainer,
   #sidebarContent,
+  #toolbarSidebar,
+  #thumbnailView,
   #sidebarContainer .sidebar-toolbar,
   #sidebarContainer .toolbar,
   #sidebarContainer .viewWrapper
@@ -959,6 +1554,17 @@ ${tokenDeclarations}
   --material-border-quinary: 1px solid var(--fill-quinary);
   --material-border-quarternary: 1px solid var(--fill-quarternary);
   --material-panedivider: 1px solid var(--color-panedivider);
+  --main-color: var(--fill-primary);
+  --toolbar-icon-bg-color: var(--fill-secondary);
+  --toolbar-icon-hover-bg-color: var(--fill-primary);
+  --sidebar-toolbar-bg-color: var(--material-toolbar);
+  --sidebar-narrow-bg-color: var(--material-sidepane);
+  --button-hover-color: var(--fill-quinary);
+  --toggled-btn-color: var(--fill-primary);
+  --toggled-btn-bg-color: var(--fill-quarternary);
+  --toggled-hover-active-btn-color: var(--fill-quinary);
+  --thumbnail-hover-color: var(--fill-quarternary);
+  --thumbnail-selected-color: var(--color-accent);
   color-scheme: ${theme};
   background-color: var(--material-sidepane) !important;
   color: var(--fill-primary) !important;
@@ -969,16 +1575,21 @@ ${tokenDeclarations}
 }
 
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .divider,
-:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .split-view-resizer {
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .split-view-resizer,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarResizer {
   background: var(--fill-quinary) !important;
 }
 
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbar-button,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbarButton,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .secondaryToolbarButton,
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer button {
   color: var(--fill-secondary) !important;
 }
 
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbar-button:hover,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbarButton:hover,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .secondaryToolbarButton:hover,
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer button:hover {
   background-color: var(--fill-quinary) !important;
 }
@@ -986,6 +1597,10 @@ ${tokenDeclarations}
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbar-button:active,
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbar-button.active,
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbar-button.active-pseudo-class-fix,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbarButton:active,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .toolbarButton.toggled,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .secondaryToolbarButton:active,
+:root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer .secondaryToolbarButton.toggled,
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer button:active,
 :root[${READER_LEFT_SIDEBAR_ATTR}="${theme}"] #sidebarContainer button[aria-pressed="true"] {
   background-color: var(--fill-quarternary) !important;
@@ -1008,6 +1623,42 @@ ${tokenDeclarations}
   .muted
 ) {
   color: var(--fill-secondary) !important;
+}
+
+`;
+}
+
+function buildReaderThumbnailThemeCSS(theme: Exclude<ThemeMode, "follow">) {
+  const pageBackground = theme === "dark" ? "#272727" : "#ffffff";
+  const imageFilter =
+    theme === "dark"
+      ? "invert(90%) saturate(100%) hue-rotate(180deg) brightness(100%) contrast(125%)"
+      : "none";
+
+  return `
+/* Zotero 7 uses the legacy #thumbnailView/.thumbnailImage tree, while Zotero 8
+   renders React thumbnails under .thumbnails-view and applies its own invert
+   filter to the .image container in dark content mode. */
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] #thumbnailView .thumbnail,
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] #thumbnailView .thumbnailImage,
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] .thumbnails-view .thumbnail .image,
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] .thumbnails-view .thumbnail .placeholder {
+  background-color: ${pageBackground} !important;
+}
+
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] .thumbnails-view .thumbnail .image {
+  background-color: ${pageBackground} !important;
+  filter: ${imageFilter} !important;
+}
+
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] #thumbnailView .thumbnailImage {
+  background-color: ${pageBackground} !important;
+  filter: ${imageFilter} !important;
+}
+
+:root[${READER_THUMBNAIL_ATTR}="${theme}"] .thumbnails-view .thumbnail img {
+  background-color: ${pageBackground} !important;
+  filter: none !important;
 }
 `;
 }

@@ -95,6 +95,9 @@ function registerReaderObserver() {
   }
 
   const handler: _ZoteroTypes.Reader.EventHandler<"renderToolbar"> = () => {
+    if (!SplitThemeManager.hasLegacyReaders()) {
+      return;
+    }
     SplitThemeManager.refreshAllWindowsWithRecovery([0, 150, 500]);
   };
 
